@@ -1,3 +1,47 @@
+# l2-orderbook-replay
+
+A C++20 market-data replay engine that rebuilds the Binance BTCUSDT USDS-M futures **L2 order book** from raw exchange updates, **proves it correct** against an independent reference (Tardis `book_snapshot_5`), and benchmarks two book designs: a textbook `std::map` book and a cache-friendly **ArrayBook** that replays **263M events/s, 12.4× faster**.
+
+It also exports a per-message top-of-book feature file (mid, spread, microprice, top-5 imbalance), the input for my market-making, order-flow-imbalance and execution projects.
+
+Companion to [`orderbook`](https://github.com/Rubin-S/orderbook) (a price-time matching engine): that repo *creates* a book from orders; this one *reconstructs* a real exchange's book from its feed.
+
+## Pipeline
+```
+Tardis CSV (L2 updates + trades)
+   └─ mdr_convert ──▶ btc.evt   (32-byte fixed records, integer ticks/lots, exact decimal parsing)
+        └─ replay loop (mmap, snapshot-reset rule, per-message grouping)
+             ├─ mdr_validate ──▶ top-5 vs Tardis book_snapshot_5, every message
+             ├─ mdr_features ──▶ features.csv (ts, bid, ask, mid, spread, microprice, imbalance5)
+             └─ mdr_bench    ──▶ scan / replay / apply / latency, MapBook vs ArrayBook
+```
+
+## Design decisions
+- **Integers end to end.** Prices and sizes are parsed exactly into int64 ticks and lots (`83569.4` → `835694`). The parser throws instead of rounding, so no floating-point error ever enters the book. Doubles appear only when writing `features.csv`.
+- **Binary event file + mmap.** CSV parsing happens once, in `mdr_convert`. Replay reads 32-byte records straight from the page cache, with no per-event allocation.
+- **Message-level semantics.** Rows sharing a `local_timestamp` are one exchange message. The book is inspected only after the whole message is applied; mid-message states never existed on the exchange and can be crossed.
+- **Snapshot rule.** A false→true flip of `is_snapshot` clears the book (start of day, feed reconnects).
+- **One interface, two books.** An `L2Book` C++20 concept. `MapBook` (two `std::map`s) is the simple oracle; `ArrayBook` is a dense 2^20-tick window per side (8 MiB) centred on the first price, with ordered overflow maps for far-away levels (e.g. bids at 1,000 USDT), so nothing is dropped. A cached best index makes updates one array write.
+- **Testing in three layers.** Hand-written edge cases per book, a randomized differential test (ArrayBook vs MapBook, 900k ops, full-depth compares), and a mutation check proving the tests catch a broken best-level scan.
+
+## Build and run
+Requires GCC 13+ (or Clang 17+), CMake 3.20+, Ninja, curl.
+```bash
+cmake -S . -B build -G Ninja && cmake --build build
+ctest --test-dir build --output-on-failure        # parser, edge cases, differential test
+
+scripts/get_data.sh                                # downloads the free sample, builds data/btc.evt
+./build/mdr_validate data/btc.evt data/snap5.csv array      # expect VALID
+./build/mdr_features data/btc.evt data/features.csv array
+./build/mdr_bench    data/btc.evt all              # [map|array|all] [scan|replay|apply|latency|all]
+```
+
+## Data
+Tardis free first-of-month sample (Binance USDS-M futures, BTCUSDT, 2026-10-01): the first 3,000,000 L2 rows (00:00:00 to 00:38:51 UTC, minus the half-cut final message), with trades and snapshots trimmed to that window. Raw data isn't committed (size and Tardis terms); `scripts/get_data.sh` rebuilds it, and `results/checksums_2026-10-11.txt` lets you confirm byte-identical inputs.
+
+## Provenance
+Built step by step from a guided reference implementation. I typed, built, tested and validated every component myself, and every number in this README comes from my own runs on the machine listed under Environment.
+
 ## Results
 
 ### Correctness
