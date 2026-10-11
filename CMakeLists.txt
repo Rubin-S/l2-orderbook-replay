@@ -15,3 +15,6 @@ target_include_directories(mdr_tests PRIVATE include)
 
 enable_testing()
 add_test(NAME unit COMMAND mdr_tests)
+
+add_executable(mdr_convert tools/convert.cpp)
+target_include_directories(mdr_convert PRIVATE include)
