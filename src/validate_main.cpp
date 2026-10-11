@@ -1,5 +1,5 @@
-// validate_main.cpp - step 8: replay a .evt file through MapBook and VALIDATE
-// every complete message against Tardis book_snapshot_5.
+// validate_main.cpp - steps 8 + 9.4: replay a .evt file through MapBook or ArrayBook
+// and VALIDATE every complete message against Tardis book_snapshot_5.
 #include <array>
 #include <cstdint>
 #include <cstdio>
@@ -98,24 +98,35 @@ struct Validator {
     void finish(const B& b) { if (group != -1) end_group(b); }   // flush the last message
 };
 
+// ---- one runner, stamped out per book type ----
+template <L2Book B>
+static int run(const EventFile& f, const std::string& snap_path, const char* name) {
+    const FileHeader& h = f.header();
+    B book;
+    Validator<B> v;
+    v.snaps = load_snaps(snap_path, h.px_scale, h.qty_scale);
+    replay(f.events(), book, v);
+    v.finish(book);
+    std::printf("[%s] snap_rows=%zu message_groups=%llu matched=%llu crossed_groups=%llu\n", name,
+                v.snaps.size(), (unsigned long long)v.groups, (unsigned long long)v.matched,
+                (unsigned long long)v.crossed);
+    std::printf("[%s] content_mismatch=%llu changed_without_row=%llu row_without_change=%llu\n", name,
+                (unsigned long long)v.content_mismatch, (unsigned long long)v.changed_no_row,
+                (unsigned long long)v.row_no_change);
+    if constexpr (std::same_as<B, ArrayBook>)        // compile-time branch: MapBook has no such method
+        std::printf("[%s] overflow_updates=%llu\n", name, (unsigned long long)book.overflow_updates());
+    bool ok = v.content_mismatch == 0 && v.changed_no_row == 0 && v.row_no_change == 0;
+    std::printf(ok ? "[%s] VALID\n" : "[%s] INVALID\n", name);
+    return ok ? 0 : 1;
+}
+
 int main(int argc, char** argv) {
-    if (argc != 3) { std::fprintf(stderr, "usage: mdr_validate <file.evt> <snap5.csv>\n"); return 2; }
+    if (argc < 3 || argc > 4) { std::fprintf(stderr, "usage: mdr_validate <file.evt> <snap5.csv> [map|array]\n"); return 2; }
     try {
         EventFile f(argv[1]);
-        const FileHeader& h = f.header();
-        MapBook book;
-        Validator<MapBook> v;
-        v.snaps = load_snaps(argv[2], h.px_scale, h.qty_scale);
-        replay(f.events(), book, v);
-        v.finish(book);
-        std::printf("snap_rows=%zu message_groups=%llu matched=%llu crossed_groups=%llu\n",
-                    v.snaps.size(), (unsigned long long)v.groups, (unsigned long long)v.matched,
-                    (unsigned long long)v.crossed);
-        std::printf("content_mismatch=%llu changed_without_row=%llu row_without_change=%llu\n",
-                    (unsigned long long)v.content_mismatch, (unsigned long long)v.changed_no_row,
-                    (unsigned long long)v.row_no_change);
-        bool ok = v.content_mismatch == 0 && v.changed_no_row == 0 && v.row_no_change == 0;
-        std::printf(ok ? "VALID\n" : "INVALID\n");
-        return ok ? 0 : 1;
+        std::string book = argc == 4 ? argv[3] : "map";
+        if (book == "map")   return run<MapBook>(f, argv[2], "map");
+        if (book == "array") return run<ArrayBook>(f, argv[2], "array");
+        std::fprintf(stderr, "unknown book: %s (use map or array)\n", book.c_str()); return 2;
     } catch (const std::exception& ex) { std::fprintf(stderr, "error: %s\n", ex.what()); return 1; }
 }
