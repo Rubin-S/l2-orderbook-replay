@@ -1,0 +1,18 @@
+# taskset -c 2 perf stat -e cycles:u,instructions:u,cache-misses:u,L1-dcache-load-misses:u,branch-misses:u ./build/mdr_bench data/btc.evt {map|array} apply
+# CPU 2 = P-core (cpu_core list 0-7); cpu_atom lines were <not counted>
+
+apply[map]   median=49.70 ns/update (20.1M updates/s) over 14 passes (+1 warm-up) of 2999701 updates
+    10,388,555,401      cpu_core/cycles/u
+     6,584,328,480      cpu_core/instructions/u
+        11,664,956      cpu_core/cache-misses/u
+       132,625,102      cpu_core/L1-dcache-load-misses/u
+       210,815,380      cpu_core/branch-misses/u
+       2.348348848 seconds time elapsed
+
+apply[array]   median=2.81 ns/update (355.4M updates/s) over 210 passes (+1 warm-up) of 2999701 updates
+     9,164,729,391      cpu_core/cycles/u
+    14,129,034,436      cpu_core/instructions/u
+       212,452,268      cpu_core/cache-misses/u
+         6,689,786      cpu_core/L1-dcache-load-misses/u
+       126,914,751      cpu_core/branch-misses/u
+       2.082509438 seconds time elapsed

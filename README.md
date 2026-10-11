@@ -25,3 +25,19 @@ Raw output: [`results/bench_2026-10-11.txt`](results/bench_2026-10-11.txt)
 - OS: Fedora 44 x86_64, kernel 7.2.5-200.fc44.x86_64, default power profile
 - Compiler: GCC 16.2.1, CMake Release (`-O3 -DNDEBUG`), `-Wall -Wextra -Wpedantic`, C++20
 - Data: Binance USDS-M BTCUSDT, Tardis free sample 2026-10-01 00:00:00–00:38:51 UTC; 3,063,267 events (2,999,701 L2 updates + 63,566 trades)
+### Why ArrayBook is faster (hardware counters)
+`perf stat` on the `apply` benchmark, pinned to one P-core (`taskset -c 2`), user-space only. Per update = count ÷ ((passes + 1) × 2,999,701).
+
+| Per update | MapBook | ArrayBook | Ratio |
+|---|---|---|---|
+| Cycles | 230.9 | 14.5 | 16× |
+| Instructions | 146.3 | 22.3 | 6.6× |
+| IPC | 0.63 | 1.54 | 2.4× |
+| L1 data-cache misses | 2.948 | 0.011 | 279× |
+| Branch misses | 4.685 | 0.201 | 23× |
+
+std::map does 6.6× more instructions (the tree walk) at 2.4× lower IPC: the core stalls on pointer-chasing L1 misses and on mispredicted left/right branches. ArrayBook's update is one indexed store into a few hot cache lines.
+
+Caveat: perf counts the whole process, including `clear()` between passes (outside the timer). ArrayBook's `clear()` rewrites its 16 MB arrays each pass, which most likely dominates its last-level-cache misses (212M vs map's 11.7M), so that counter is omitted. It also accounts for ~11% of ArrayBook's counted cycles (14.5 counted vs 2.81 ns × 4.6 GHz ≈ 12.9 timed).
+
+Raw output: [`results/perf_2026-10-11.txt`](results/perf_2026-10-11.txt)

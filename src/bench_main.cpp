@@ -1,6 +1,7 @@
 // bench_main.cpp - step 11: how fast is each book? Four measurements, from
 // "how fast can we even read the file" down to "how long does ONE update take".
-// usage: mdr_bench <file.evt> [map|array|all]
+// usage: mdr_bench <file.evt> [map|array|all] [scan|replay|apply|latency|all]
+// The second filter lets `perf stat` count hardware events for ONE test only.
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
@@ -29,11 +30,12 @@ template <L2Book B> struct Null {                  // strategy that does nothing
 struct Upd { std::int64_t px; std::int64_t qty; Side side; };
 
 template <L2Book B>
-static void bench(std::span<const Event> evs, const char* name) {
+static void bench(std::span<const Event> evs, const char* name, const std::string& only) {
     constexpr double kMinSec = 2.0;                // repeat each test for >= 2 s and >= 5 passes; report the MEDIAN
+    auto want = [&](const char* t) { return only == "all" || only == t; };
 
     // 1) scan: touch every record, no book. The ceiling: replay can never beat this.
-    {
+    if (want("scan")) {
         std::vector<double> r; std::int64_t sum = 0;
         auto start = Clock::now();
         while (secs(start, Clock::now()) < kMinSec || r.size() < 5) {
@@ -46,7 +48,7 @@ static void bench(std::span<const Event> evs, const char* name) {
     }
 
     // 2) replay: the full event loop (snapshot rule, trades, callbacks) with a no-op strategy.
-    {
+    if (want("replay")) {
         B book; Null<B> n;
         replay(evs, book, n);                      // warm-up: page cache, first touch of the 16 MB arrays
         std::vector<double> r; auto start = Clock::now();
@@ -71,7 +73,7 @@ static void bench(std::span<const Event> evs, const char* name) {
     }
 
     // 3) apply: ONLY book.apply() in a tight loop. clear() between passes is outside the timer.
-    {
+    if (want("apply")) {
         B book; std::vector<double> ns;
         for (auto& u : ups) book.apply(u.side, u.px, u.qty);   // warm-up
         auto start = Clock::now();
@@ -83,13 +85,13 @@ static void bench(std::span<const Event> evs, const char* name) {
             keep(book);
             ns.push_back(secs(t0, t1) * 1e9 / ups.size());
         }
-        std::printf("apply[%s]   median=%.2f ns/update (%.1fM updates/s) over %zu passes\n",
-                    name, median(ns), 1e3 / median(ns), ns.size());
+        std::printf("apply[%s]   median=%.2f ns/update (%.1fM updates/s) over %zu passes (+1 warm-up) of %zu updates\n",
+                    name, median(ns), 1e3 / median(ns), ns.size(), ups.size());
     }
 
     // 4) latency: a timer around EACH apply(). Averages hide spikes; p99.9 shows them.
     //    The timer has its own cost, so we also time an EMPTY timer and print both.
-    {
+    if (want("latency")) {
         B book; std::vector<std::uint32_t> lat; lat.reserve(ups.size());
         for (auto& u : ups) {
             auto t0 = Clock::now(); book.apply(u.side, u.px, u.qty); auto t1 = Clock::now();
@@ -111,13 +113,17 @@ static void bench(std::span<const Event> evs, const char* name) {
 }
 
 int main(int argc, char** argv) {
-    if (argc < 2 || argc > 3) { std::fprintf(stderr, "usage: mdr_bench <file.evt> [map|array|all]\n"); return 2; }
+    if (argc < 2 || argc > 4) { std::fprintf(stderr, "usage: mdr_bench <file.evt> [map|array|all] [scan|replay|apply|latency|all]\n"); return 2; }
     try {
         EventFile f(argv[1]);
-        std::string which = argc == 3 ? argv[2] : "all";
-        std::printf("events=%zu\n", f.events().size());
-        if (which == "map" || which == "all")   bench<MapBook>(f.events(), "map");
-        if (which == "array" || which == "all") bench<ArrayBook>(f.events(), "array");
+        std::string which = argc >= 3 ? argv[2] : "all";
+        std::string only  = argc == 4 ? argv[3] : "all";
         if (which != "map" && which != "array" && which != "all") { std::fprintf(stderr, "unknown book: %s\n", which.c_str()); return 2; }
+        if (only != "scan" && only != "replay" && only != "apply" && only != "latency" && only != "all") {
+            std::fprintf(stderr, "unknown test: %s\n", only.c_str()); return 2;
+        }
+        std::printf("events=%zu\n", f.events().size());
+        if (which == "map" || which == "all")   bench<MapBook>(f.events(), "map", only);
+        if (which == "array" || which == "all") bench<ArrayBook>(f.events(), "array", only);
     } catch (const std::exception& ex) { std::fprintf(stderr, "error: %s\n", ex.what()); return 1; }
 }
