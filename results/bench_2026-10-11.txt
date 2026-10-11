@@ -1,0 +1,9 @@
+events=3063267
+scan[map]    median=728.2M events/s over 405 passes
+replay[map]  median=21.24M events/s over 14 passes
+apply[map]   median=50.10 ns/update (20.0M updates/s) over 14 passes
+latency[map] timer-inclusive p50=57ns p99=162ns p99.9=261ns | empty-timer p50=11ns p99=13ns p99.9=16ns
+scan[array]    median=669.3M events/s over 420 passes
+replay[array]  median=263.05M events/s over 172 passes
+apply[array]   median=2.96 ns/update (338.3M updates/s) over 199 passes
+latency[array] timer-inclusive p50=11ns p99=20ns p99.9=34ns | empty-timer p50=10ns p99=12ns p99.9=13ns

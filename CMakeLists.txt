@@ -27,3 +27,6 @@ target_include_directories(mdr_validate PRIVATE include)
 
 add_executable(mdr_features src/features_main.cpp)
 target_include_directories(mdr_features PRIVATE include)
+
+add_executable(mdr_bench src/bench_main.cpp)
+target_include_directories(mdr_bench PRIVATE include)
