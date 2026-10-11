@@ -21,3 +21,6 @@ target_include_directories(mdr_convert PRIVATE include)
 
 add_executable(mdr_replay src/replay_main.cpp)
 target_include_directories(mdr_replay PRIVATE include)
+
+add_executable(mdr_validate src/validate_main.cpp)
+target_include_directories(mdr_validate PRIVATE include)
