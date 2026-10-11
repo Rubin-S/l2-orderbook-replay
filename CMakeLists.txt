@@ -18,3 +18,6 @@ add_test(NAME unit COMMAND mdr_tests)
 
 add_executable(mdr_convert tools/convert.cpp)
 target_include_directories(mdr_convert PRIVATE include)
+
+add_executable(mdr_replay src/replay_main.cpp)
+target_include_directories(mdr_replay PRIVATE include)
