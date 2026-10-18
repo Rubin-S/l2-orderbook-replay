@@ -7,6 +7,8 @@
 // reset_flag = 1 on the first row after a snapshot, or after a message we
 // could not use (crossed / one-sided book). Its e_m are set to 0: the change
 // across a rebuild is not real order flow.
+// After reset_flag come the queue sizes at levels 2..10 (bq2..bq10, aq2..aq10),
+// needed to scale deeper-level OFI by the depth it had to eat through.
 // The summary line also prints throughput: replay + OFI + CSV formatting,
 // timed in-process (file loading excluded). Write to /dev/null to time the
 // compute without disk.
@@ -60,7 +62,11 @@ struct OfiWriter {
         std::fprintf(fp, "%lld,%lld,%.10g,%.8g,%.8g,%.8g", (long long)group_exch, (long long)group,
                      (bp + ap) / 2, ap - bp, bb.qty / qs, ba.qty / qs);
         for (int m = 0; m < kDepth; ++m) std::fprintf(fp, ",%.8g", e[m] / qs);
-        std::fprintf(fp, ",%d\n", reset ? 1 : 0);
+        std::fprintf(fp, ",%d", reset ? 1 : 0);
+        // queue sizes at levels 2..10 (level 1 is already in bq1/aq1); 0 = level missing
+        for (int m = 1; m < kDepth; ++m) std::fprintf(fp, ",%.8g", cur.bid[m].qty / qs);
+        for (int m = 1; m < kDepth; ++m) std::fprintf(fp, ",%.8g", cur.ask[m].qty / qs);
+        std::fputc('\n', fp);
         ++rows; if (reset) ++resets;
         prev = cur; have_prev = true;
     }
@@ -82,7 +88,11 @@ static int run(const EventFile& f, const std::string& out, const char* name) {
     if (!fp) { std::fprintf(stderr, "cannot open %s\n", out.c_str()); return 1; }
     std::fprintf(fp, "ts_exch_us,ts_local_us,mid,spread,bq1,aq1");
     for (int m = 1; m <= kDepth; ++m) std::fprintf(fp, ",e%d", m);
-    std::fprintf(fp, ",reset_flag\n");
+    std::fprintf(fp, ",reset_flag");
+    // appended AFTER reset_flag so the first 17 columns stay byte-identical to the old output
+    for (int m = 2; m <= kDepth; ++m) std::fprintf(fp, ",bq%d", m);
+    for (int m = 2; m <= kDepth; ++m) std::fprintf(fp, ",aq%d", m);
+    std::fputc('\n', fp);
     B book;
     OfiWriter<B> s;
     s.fp = fp; s.pxs = f.header().px_scale; s.qs = f.header().qty_scale;
