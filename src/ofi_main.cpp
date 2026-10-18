@@ -7,7 +7,11 @@
 // reset_flag = 1 on the first row after a snapshot, or after a message we
 // could not use (crossed / one-sided book). Its e_m are set to 0: the change
 // across a rebuild is not real order flow.
+// The summary line also prints throughput: replay + OFI + CSV formatting,
+// timed in-process (file loading excluded). Write to /dev/null to time the
+// compute without disk.
 // usage: mdr_ofi <file.evt> <out.csv> [map|array]
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <exception>
@@ -82,11 +86,16 @@ static int run(const EventFile& f, const std::string& out, const char* name) {
     B book;
     OfiWriter<B> s;
     s.fp = fp; s.pxs = f.header().px_scale; s.qs = f.header().qty_scale;
+    const auto t0 = std::chrono::steady_clock::now();
     replay(f.events(), book, s);
     s.finish(book);
+    const double sec = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
     std::fclose(fp);
+    const double n_ev = static_cast<double>(f.events().size());
     std::printf("[%s] rows=%llu resets=%llu skipped=%llu -> %s\n", name, (unsigned long long)s.rows,
                 (unsigned long long)s.resets, (unsigned long long)s.skipped, out.c_str());
+    std::printf("[%s] %.0f events in %.3f s = %.2fM events/s, %.0f ns per output row\n", name, n_ev, sec,
+                n_ev / sec / 1e6, sec * 1e9 / static_cast<double>(s.rows));
     return 0;
 }
 
