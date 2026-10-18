@@ -30,3 +30,7 @@ target_include_directories(mdr_features PRIVATE include)
 
 add_executable(mdr_bench src/bench_main.cpp)
 target_include_directories(mdr_bench PRIVATE include)
+
+add_executable(mdr_ofi src/ofi_main.cpp)
+target_include_directories(mdr_ofi PRIVATE include)
+
