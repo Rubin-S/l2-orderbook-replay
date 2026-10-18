@@ -2,21 +2,7 @@
 //
 // One row per exchange MESSAGE (events sharing ts_local) that touched the book.
 // For each level m = 1..10 we compare the book BEFORE and AFTER the message
-// (Cont-Kukanov-Stoikov 2014, multi-level form of Xu-Yang-Kukanov 2019):
-//
-//   bid side: e_bid =  (Pb_new >= Pb_old ? qb_new : 0) - (Pb_new <= Pb_old ? qb_old : 0)
-//   ask side: e_ask =  (Pa_new <= Pa_old ? qa_new : 0) - (Pa_new >= Pa_old ? qa_old : 0)
-//   e_m = e_bid - e_ask        (> 0 = buying pressure, < 0 = selling pressure)
-//
-// Read it in words: a bid queue that grows, or a bid price that steps UP,
-// is buyers adding pressure (+). A bid queue that shrinks, or a bid price
-// that steps DOWN, is pressure leaving (-). Asks are the mirror image.
-//
-// Prices are compared as INTEGER ticks: 83569.3 vs 83569.30000001 as doubles
-// can compare "not equal" and flip the sign of a whole level. Integers can't.
-//
-// A missing level is treated as an empty queue at the worst possible price,
-// so a level appearing counts as "price improved" and adds its full size.
+// and apply the CKS formula from mdr/ofi.hpp (tested in tests/ofi_test.cpp).
 //
 // reset_flag = 1 on the first row after a snapshot, or after a message we
 // could not use (crossed / one-sided book). Its e_m are set to 0: the change
@@ -25,16 +11,14 @@
 #include <cstdint>
 #include <cstdio>
 #include <exception>
-#include <limits>
 #include <string>
 #include "mdr/books.hpp"
+#include "mdr/ofi.hpp"
 #include "mdr/replay.hpp"
 
 using namespace mdr;
 
-constexpr int kDepth = 10;
-constexpr std::int64_t kWorstBid = std::numeric_limits<std::int64_t>::min();  // missing bid level
-constexpr std::int64_t kWorstAsk = std::numeric_limits<std::int64_t>::max();  // missing ask level
+constexpr int kDepth = kOfiDepth;
 
 struct Snap { Level bid[kDepth], ask[kDepth]; };    // top 10 of each side, missing levels filled
 
@@ -45,13 +29,6 @@ static Snap snap(const B& b) {
     for (int i = nb; i < kDepth; ++i) s.bid[i] = {kWorstBid, 0};
     for (int i = na; i < kDepth; ++i) s.ask[i] = {kWorstAsk, 0};
     return s;
-}
-
-// The CKS formula for one level. Quantities are integer lots.
-inline std::int64_t level_ofi(Level bo, Level bn, Level ao, Level an) {
-    std::int64_t eb = (bn.px >= bo.px ? bn.qty : 0) - (bn.px <= bo.px ? bo.qty : 0);
-    std::int64_t ea = (an.px <= ao.px ? an.qty : 0) - (an.px >= ao.px ? ao.qty : 0);
-    return eb - ea;
 }
 
 template <L2Book B>

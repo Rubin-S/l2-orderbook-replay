@@ -34,3 +34,7 @@ target_include_directories(mdr_bench PRIVATE include)
 add_executable(mdr_ofi src/ofi_main.cpp)
 target_include_directories(mdr_ofi PRIVATE include)
 
+add_executable(mdr_ofi_test tests/ofi_test.cpp)
+target_include_directories(mdr_ofi_test PRIVATE include)
+add_test(NAME ofi_cases COMMAND mdr_ofi_test)
+
